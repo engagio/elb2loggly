@@ -6,6 +6,7 @@ var request = require('request');
 var Transform = require('stream').Transform;
 var csv = require('csv-streamify');
 var JSONStream = require('JSONStream');
+var zlib = require('zlib');
 
 // Set LOGGLY_TOKEN to your Loggly customer token. It will look something like this:
 // LOGGLY_TOKEN = 'ea5058ee-d62d-4faa-8388-058646faa747'
@@ -43,35 +44,38 @@ if (DEFAULT_LOGGLY_URL) {
 // AWS logs contain the following fields: (Note: a couple are parsed from within the field.)
 // http://docs.aws.amazon.com/ElasticLoadBalancing/latest/DeveloperGuide/access-log-collection.html
 var COLUMNS = [
-  'timestamp', // 0
-  'elb', // 1
-  'client_ip', // 2
-  'client_port', // 3 - split from client
-  'backend', // 4
-  'backend_port', // 5
-  'request_processing_time', // 6
-  'backend_processing_time', // 7
-  'response_processing_time', // 8
-  'elb_status_code', // 9
-  'backend_status_code', // 10
-  'received_bytes', // 11
-  'sent_bytes', // 12
-  'request_method', // 13 - Split from request
-  'request_url', // 14 - Split from request
-  'request_query_params', // 15 - Split from request
-  'user_agent', // 16
-  'ssl_cipher', // 17
-  'ssl_protocol' // 18
+  'type', // 0
+  'timestamp', // 1
+  'elb', // 2
+  'client_ip', // 3
+  'client_port', // 4 - split from client
+  'backend', // 5
+  'backend_port', // 6
+  'request_processing_time', // 7
+  'backend_processing_time', // 8
+  'response_processing_time', // 9
+  'elb_status_code', // 10
+  'backend_status_code', // 11
+  'received_bytes', // 12
+  'sent_bytes', // 13
+  'request_method', // 14 - Split from request
+  'request_url', // 15 - Split from request
+  'request_query_params', // 16 - Split from request
+  'user_agent', // 17
+  'ssl_cipher', // 18
+  'ssl_protocol', // 19
+  'target_group_arn', // 20
+  'trace_id', // 21
 ];
 
 // The following column indexes will be turned into numbers so that
 // we can filter within loggly
 var NUMERIC_COL_INDEX = [
-  6,
   7,
   8,
-  11,
-  12
+  9,
+  12,
+  13
 ];
 
 // A counter for the total number of events parsed
@@ -114,39 +118,34 @@ var obscureURLParameter = function(url, parameter, obscureLength) {
 // Parse elb log into component parts.
 var parseS3Log = function(data, encoding, done) {
   var originalData = data;
-  // If this is a HTTP load balander we get 12 fields
-  // for HTTPs load balancers we get 15
-  if (data.length === 12 || data.length === 15) {
-      // Keep an easily boolean depending on the ELB type
-    var isHTTP = data.length === 12;
-      // If this is a HTTP ELB we need to get rid of the HTTPs fields in our COLUMNS array
-    if (isHTTP) {
-      COLUMNS.splice(16, 3);
-    }
 
-      // Split clientip:port and backendip:port at index 2,3
-      // We need to be carefull here because of potential 5xx errors which may not include
+  // The trace_id field is optional
+  if (data.length === 1) {
+    done();
+  }
+  else if (data.length === 17 || data.length === 18) {
+      // Split clientip:port and backendip:port at index 3,4
+      // We need to be careful here because of potential 5xx errors which may not include
       // backend:port
-    if (data[3].indexOf(':') > -1) {
+    if (data[4].indexOf(':') > -1) {
         // If the field contains a colon we perform the normal split to get ip and port
-      data.splice(3, 1, data[3].split(':'));
+      data.splice(4, 1, data[4].split(':'));
     } else {
         // We may get here if there was a 5xx error
         // We will add 'dash' place holders for the missing data
         // This is common for Apache logs when a field is blank, it is also more consistent with
         // the original ELB data
-      data.splice(3, 1, '-', '-');
+      data.splice(4, 1, '-', '-');
     }
 
       // client:port
-    data.splice(2, 1, data[2].split(':'));
+    data.splice(3, 1, data[3].split(':'));
 
       // Ensure the data is flat
     data = _.flatten(data);
 
       // Pull the method from the request.  (WTF on Amazon's decision to keep these as one string.)
-      // This position depends on the type of ELB
-    var initialRequestPosition = isHTTP ? data.length - 1 : data.length - 4;
+    var initialRequestPosition = 14
     var urlMash = data[initialRequestPosition];
     data.splice(initialRequestPosition, 1);
       // Ensure the data is flat
@@ -189,9 +188,9 @@ var parseS3Log = function(data, encoding, done) {
     } else {
       /* eslint-disable camelcase */
       var errorLog = {
-        timestamp: originalData[0],
-        elb: originalData[1],
-        elb_status_code: originalData[7],
+        timestamp: originalData[1],
+        elb: originalData[2],
+        elb_status_code: originalData[8],
         error: 'ELB log length: ' + originalData.length + ' did not match COLUMNS length ' + COLUMNS.length
       };
       /* eslint-enable camelcase */
@@ -204,11 +203,11 @@ var parseS3Log = function(data, encoding, done) {
     done();
   } else {
       // Record a useful error in the lambda logs that something was wrong with the input data
-    done("Expecting 12 or 15 fields, actual fields " + data.length);
+    done("Expecting 17 or 18 fields, actual fields " + data.length + " " + JSON.stringify(data));
   }
 };
 
-exports.handler = function(event, context) {
+exports.handler = function(event, context, callback) {
    // A useful line for debugging, add a version number to see which version ran in lambda
   console.log('Running lambda event handler.');
 
@@ -286,13 +285,14 @@ exports.handler = function(event, context) {
         // So: "hello \"world\"" is not parsed as one string. To handle this, rewrite
         // the \" as \' so the are ignored by the csv-streamify parser.
         // Note: This only works because the AWS log should not have \" anywhere except the
-        // user agenet field, and only in quoted strings.
+        // user agent field, and only in quoted strings.
         var doubleToSingleQuote = function(data, encoding, done) {
           var newStr = data.toString().replace(/\\"/g, '\\\'');
           this.push(newStr);
           done();
         };
 
+        var gunzip = zlib.createGunzip();
         var csvToJson = csv({objectMode: true, delimiter: ' '});
         var transquote = new Transform({objectMode: true});
         transquote._transform = doubleToSingleQuote;
@@ -307,6 +307,7 @@ exports.handler = function(event, context) {
         console.log('Using Loggly endpoint: ' + LOGGLY_URL);
 
         bufferStream
+         .pipe(gunzip)
          .pipe(transquote)
          .pipe(csvToJson)
          .pipe(parser)
@@ -325,13 +326,13 @@ exports.handler = function(event, context) {
             ' and upload to loggly' +
             ' due to an error: ' + err
             );
-        context.fail(err);
+        callback(err);
       } else {
         console.log(
             'Successfully uploaded ' + bucket + '/' + key +
             ' to ' + LOGGLY_URL + ". Parsed " + eventsParsed + " events."
             );
-        context.done();
+        callback();
       }
     });
   }

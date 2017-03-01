@@ -1,5 +1,5 @@
 # elb2loggly
-A Node.js AWS Lambda script that converts the ELB logs written to S3 into JSON and pushes them to Loggly
+A Node.js AWS Lambda script that converts the ELB Application Load Balancer logs written to S3 into JSON and pushes them to Loggly
 
 ## More information about AWS Lambda and Loggly
   * http://aws.amazon.com/lambda/

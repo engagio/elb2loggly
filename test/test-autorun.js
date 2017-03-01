@@ -79,21 +79,11 @@ var testOneLog = function( log_filename, json_results_filename ) {
 				}] 
 			};
 
-			var context = {
-				fail: function(error) { 
+			var callback = function(error) {
+				if (error) {
 					chai_done(error); 
-				},
-				
-				succeed: function(result) { 
+				} else {
 					chai_done() 
-				},
-
-				done: function (error, result) {
-					if (error === null || typeof(error) === 'undefined') {
-						context.succeed(result);
-					} else {
-						context.fail(error);
-					}
 				}
 			}
 
@@ -101,7 +91,7 @@ var testOneLog = function( log_filename, json_results_filename ) {
 				if ( chunk ) { data = chunk.toString('utf8') };
 			});
 
-			elb2loggly.handler(event, context);
+			elb2loggly.handler(event, null, callback);
 		});
 
 		it('should produce a json object that matches ' + json_results_filename, function () {
@@ -120,10 +110,10 @@ var testOneLog = function( log_filename, json_results_filename ) {
 var cwd = process.cwd();
 process.chdir('test');
 
-glob.sync('autotest-*.log').forEach( function(logfile_name) {
+glob.sync('autotest-*.log.gz').forEach( function(logfile_name) {
 	var basename = logfile_name.split('.')[0];
 
-	testOneLog('./' +logfile_name, './' + basename + '.json');
+	testOneLog('./' + logfile_name, './' + basename + '.json');
 });
 
 process.chdir(cwd);
