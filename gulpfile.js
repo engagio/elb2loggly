@@ -81,14 +81,6 @@ gulp.task('js', function() {
     .pipe(gulp.dest('dist/'));
 });
 
-// Now the dist directory is ready to go. Zip it.
-// (Don't include the package.json that npm left there.)
-gulp.task('zip', function() {
-  return gulp.src(['dist/**/*', '!dist/package.json', 'dist/.*'])
-    .pipe(zip(deploymentZip))
-    .pipe(gulp.dest('./'));
-});
-
 // The Deploy script should pass in use: npm install --production
 // to avoidpackaging dev packages in the deployed code.
 gulp.task('deploy-lambda', function() {
@@ -101,7 +93,6 @@ gulp.task('package', function(cb) {
   return runSequence(
 	'npm',
     ['js', 'cfg'],
-    'zip',
     cb
     );
 });
