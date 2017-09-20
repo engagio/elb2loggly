@@ -66,6 +66,7 @@ var COLUMNS = [
   'ssl_protocol', // 19
   'target_group_arn', // 20
   'trace_id', // 21
+  'empty' //22
 ];
 
 // The following column indexes will be turned into numbers so that
@@ -123,7 +124,7 @@ var parseS3Log = function(data, encoding, done) {
   if (data.length === 1) {
     done();
   }
-  else if (data.length === 17 || data.length === 18) {
+  else if (data.length === 17 || data.length === 18 || data.length === 19) {
       // Split clientip:port and backendip:port at index 3,4
       // We need to be careful here because of potential 5xx errors which may not include
       // backend:port
