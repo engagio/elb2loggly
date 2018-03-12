@@ -107,3 +107,9 @@ gulp.task('deploy', function(cb) {
 
 gulp.task('default', ['deploy']);
 
+gulp.task('zip', () =>
+    gulp.src(srcFile)
+        .pipe(zip(deploymentZip))
+        .pipe(gulp.dest('dist/'))
+);
+

@@ -66,7 +66,7 @@ var COLUMNS = [
   'ssl_protocol', // 19
   'target_group_arn', // 20
   'trace_id', // 21
-  'domain_name', //22
+  'domain_name', // 22
   'chosen_cert_arn',
   'dummy'
 ];
@@ -121,13 +121,12 @@ var obscureURLParameter = function(url, parameter, obscureLength) {
 // Parse elb log into component parts.
 var parseS3Log = function(data, encoding, done) {
   var originalData = data;
-  //console.error(data)
-  //console.error(COLUMNS)
+  // console.error(data)
+  // console.error(COLUMNS)
   // The trace_id field is optional
   if (data.length === 1) {
     done();
-  }
-  else if(data.length > 16 && data.length < 22) {
+  } else if (data.length > 16 && data.length < 22) {
       // Split clientip:port and backendip:port at index 3,4
       // We need to be careful here because of potential 5xx errors which may not include
       // backend:port
@@ -149,7 +148,7 @@ var parseS3Log = function(data, encoding, done) {
     data = _.flatten(data);
 
       // Pull the method from the request.  (WTF on Amazon's decision to keep these as one string.)
-    var initialRequestPosition = 14
+    var initialRequestPosition = 14;
     var urlMash = data[initialRequestPosition];
     data.splice(initialRequestPosition, 1);
       // Ensure the data is flat
